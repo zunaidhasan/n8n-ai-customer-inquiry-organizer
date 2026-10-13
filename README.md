@@ -16,6 +16,11 @@ The workflow receives website contact form inquiries via Webhook, uses OpenAI to
 | Priority Levels     | High, Medium, Low                            |
 | Deliverables        | Exported n8n workflow JSON + setup guide     |
 
+## Files in this Repository
+
+- **[workflow/n8n-ai-inquiry-organizer.json](workflow/n8n-ai-inquiry-organizer.json)** – Ready-to-import n8n workflow
+- **[SETUP-GUIDE.md](SETUP-GUIDE.md)** – Short setup and configuration guide
+
 ## Workflow Steps
 
 1. **Webhook** – Receives inquiry data from the website contact form  
@@ -55,7 +60,13 @@ Service and Priority are stored in separate columns for easy filtering.
 - Custom backend / dashboard
 - Any paid third-party services beyond the client’s existing accounts
 
-## Setup Notes
+## Quick Start
+
+1. Import `workflow/n8n-ai-inquiry-organizer.json` into your n8n Cloud instance.
+2. Follow the steps in **[SETUP-GUIDE.md](SETUP-GUIDE.md)** to connect OpenAI, Google Sheets, and Gmail.
+3. Activate the workflow and point your website form to the Webhook URL.
+
+## Notes
 
 - Client maintains their own OpenAI API key, Google Sheets access, and Gmail connection.
 - Priority classification is an automated assessment and may not be perfect in every case.
