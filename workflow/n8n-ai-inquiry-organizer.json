@@ -1,0 +1,300 @@
+{
+  "name": "AI Customer Inquiry Organizer",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "website-inquiry",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook - Website Inquiry",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300],
+      "webhookId": "website-inquiry"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "name",
+              "name": "name",
+              "value": "={{ $json.body.name || $json.name || 'Unknown' }}",
+              "type": "string"
+            },
+            {
+              "id": "email",
+              "name": "email",
+              "value": "={{ $json.body.email || $json.email || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "message",
+              "name": "message",
+              "value": "={{ $json.body.message || $json.message || $json.body.inquiry || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "service",
+              "name": "service",
+              "value": "={{ $json.body.service || $json.service || $json.body.service_requested || 'Not specified' }}",
+              "type": "string"
+            },
+            {
+              "id": "receivedAt",
+              "name": "receivedAt",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-fields",
+      "name": "Extract & Standardize Fields",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.email }}",
+              "operation": "isNotEmpty"
+            },
+            {
+              "value1": "={{ $json.message }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "validate-fields",
+      "name": "Validate Required Fields",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o-mini"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=You are an assistant that analyzes customer inquiries for a digital marketing agency.\n\nGiven the following inquiry, do two things:\n1. Write a short 1-2 sentence summary of the inquiry.\n2. Classify the priority as exactly one of: High, Medium, or Low.\n\nPriority guidelines:\n- High: Urgent requests, clear budget mention, time-sensitive projects, existing clients, or high-value services.\n- Medium: Standard service inquiries with reasonable detail.\n- Low: Vague messages, spam-like content, or very low engagement.\n\nRespond ONLY in this exact JSON format (no extra text):\n{\n  \"summary\": \"your short summary here\",\n  \"priority\": \"High|Medium|Low\"\n}\n\nInquiry details:\nName: {{ $json.name }}\nEmail: {{ $json.email }}\nService: {{ $json.service }}\nMessage: {{ $json.message }}"
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.3
+        }
+      },
+      "id": "openai-classify",
+      "name": "OpenAI - Summary & Priority",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [940, 200],
+      "credentials": {
+        "openAiApi": {
+          "id": "OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const aiResponse = $input.first().json.message?.content || $input.first().json.text || $input.first().json.output || '';\n\nlet summary = 'Unable to generate summary';\nlet priority = 'Medium';\n\ntry {\n  // Try to parse JSON from the AI response\n  const cleaned = aiResponse.replace(/```json/g, '').replace(/```/g, '').trim();\n  const parsed = JSON.parse(cleaned);\n  summary = parsed.summary || summary;\n  priority = parsed.priority || priority;\n} catch (e) {\n  // Fallback: try to extract from plain text\n  summary = aiResponse.substring(0, 200);\n  if (aiResponse.toLowerCase().includes('high')) priority = 'High';\n  else if (aiResponse.toLowerCase().includes('low')) priority = 'Low';\n}\n\n// Normalize priority\npriority = ['High', 'Medium', 'Low'].includes(priority) ? priority : 'Medium';\n\nreturn [{\n  json: {\n    ...$('Extract & Standardize Fields').first().json,\n    aiSummary: summary,\n    priority: priority\n  }\n}];"
+      },
+      "id": "parse-ai",
+      "name": "Parse AI Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1160, 200]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_GOOGLE_SHEET_ID"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "Sheet1"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Name": "={{ $json.name }}",
+            "Email": "={{ $json.email }}",
+            "Message": "={{ $json.message }}",
+            "Service": "={{ $json.service }}",
+            "AI Summary": "={{ $json.aiSummary }}",
+            "Priority": "={{ $json.priority }}",
+            "Date": "={{ $json.receivedAt }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "google-sheets",
+      "name": "Google Sheets - Save Inquiry",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1380, 200],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "your-agency@email.com",
+        "subject": "=New {{ $json.priority }}-Priority Inquiry – Website Form",
+        "emailType": "text",
+        "message": "=New customer inquiry received.\n\nPriority: {{ $json.priority }}\nName: {{ $json.name }}\nEmail: {{ $json.email }}\nService: {{ $json.service }}\n\nMessage:\n{{ $json.message }}\n\nAI Summary:\n{{ $json.aiSummary }}\n\nDate: {{ $json.receivedAt }}\n\n---\nThis notification was generated automatically by the n8n AI Inquiry Organizer.",
+        "options": {}
+      },
+      "id": "gmail-notify",
+      "name": "Gmail - Send Notification",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1600, 200],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "GMAIL_CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"ok\", \"message\": \"Inquiry received and processed\" } }}",
+        "options": {}
+      },
+      "id": "respond-success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1820, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"error\", \"message\": \"Missing required fields (email or message)\" } }}",
+        "options": {}
+      },
+      "id": "respond-error",
+      "name": "Respond Validation Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [940, 420]
+    }
+  ],
+  "connections": {
+    "Webhook - Website Inquiry": {
+      "main": [
+        [
+          {
+            "node": "Extract & Standardize Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract & Standardize Fields": {
+      "main": [
+        [
+          {
+            "node": "Validate Required Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Required Fields": {
+      "main": [
+        [
+          {
+            "node": "OpenAI - Summary & Priority",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI - Summary & Priority": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Response": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets - Save Inquiry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets - Save Inquiry": {
+      "main": [
+        [
+          {
+            "node": "Gmail - Send Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail - Send Notification": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "pinData": {},
+  "versionId": "1.0.0"
+}
